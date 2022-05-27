@@ -1,0 +1,235 @@
+---
+title: "Milestone Report"
+author: "Nadine.solov"
+date: '2022-05-25'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### The purpose of this design-exploratory data analysis is to create a possible
+### algorithm and application. The project demonstrates how to upload data and
+### create a basic summary and statistical report on datasets.
+### Transformation and analysis of data from text is performed using
+### Packages "Quanteda", "tidyverse", "sentimentor" and others. Downloading files 
+### using "readLines" .
+
+```{r , echo=FALSE,include = FALSE, warning=FALSE}
+library(readtext)
+library(sentimentr)
+library(quanteda)
+library(readtext)
+library(tidyverse)
+library(arules)
+library(devtools)
+library(sbo)
+library(ggplot2)
+library(quanteda.textplots)
+library(quanteda.textstats)
+```
+
+#### Download source: URLhttps://rdocumentation.org/packages/base/versions/3.6.2
+```{r include = FALSE, warning=FALSE}
+
+dat_blogs <- readLines("en_US.blogs.txt", encoding = "UTF-8",skipNul = TRUE)
+dat_news <- readLines("en_US.news.txt", encoding = "UTF-8",skipNul = TRUE)
+dat_twitter <- readLines("en_US.twitter.txt", encoding = "UTF-8",skipNul = TRUE)
+```
+
+#### Summary statistics of downloaded data
+```{r,warning=FALSE}
+set.seed(1234)
+lines = sapply(list(dat_blogs,dat_news,dat_twitter), length)
+characters <- sapply(list(dat_twitter,dat_blogs,dat_news), function(x){sum(nchar(x))})
+
+summary<- data.frame(files =c("en_US.blogs.txt","en_US.news.txt","en_US.twitter.txt"),characters,lines, size=c("200.4 MB","196.3 MB", "200.4 MB"))
+summary
+
+```
+
+#### Take 10000 rows from each data set
+```{r,warning=FALSE }
+part_dat_twitter<-sample(dat_twitter, 10000)
+part_dat_blogs<-sample(dat_blogs, 10000)
+part_dat_news<-sample(dat_news, 10000)
+head(part_dat_twitter)
+head(part_dat_blogs)
+head(part_dat_news)
+
+```
+#### Combine 3 obtained samples into one set
+
+```{r, warning=FALSE}
+merged_file= c(part_dat_twitter,part_dat_blogs, part_dat_news )
+lines_merged_file<-length(merged_file)
+lines_merged_file #number of rows in the dataset
+merged_file<-sample(merged_file)
+head(merged_file)
+
+```
+
+#### Checking the text for profanity. 
+#### Let's check the text using three profanity dictionaries in "sentimentr" packege:
+
+```{r, warning=FALSE}
+
+alvares<-lexicon::profanity_alvarez
+head(alvares)
+arr_bad<-lexicon::profanity_arr_bad
+banned<-lexicon::profanity_banned
+
+```
+#### Let's find the approximate number of profanity words in the text, given that
+#### the data has not been cleared
+```{r,warning=FALSE}
+m1<-get_sentences(merged_file)
+profanity1<-sum(profanity(m1, profanity_list = lexicon::profanity_alvarez)$profanity_count)
+profanity2<-sum(profanity(m1, profanity_list = lexicon::profanity_arr_bad)$profanity_count)
+profanity3<-sum(profanity(m1, profanity_list = lexicon::profanity_banned)$profanity_count)
+sum_profanity<-profanity1+profanity2+profanity3
+sum_profanity
+
+```
+
+####  Make a corpus
+```{r, warning=FALSE}
+corp_merged_file<-corpus(merged_file)
+head(merged_file)
+
+```
+#### We perform tokenization using functions from the quanteda package.
+As a result,  we get documents divided into words. Additionally, we perform important steps:
+clear the text and lower the case of each word. We also remove bad words from 
+the text using three dictionaries
+for further construction of a predictive model, we do not remove stop words.
+```{r,warning=FALSE }
+tok_merged_file<-tokens(corp_merged_file,what = "word", remove_punct = TRUE,
+                             remove_symbols = TRUE,
+                             remove_numbers = TRUE,
+                             remove_separators = TRUE,
+                             split_hyphens = TRUE,
+                             include_docvars = TRUE,
+                             remove_url=TRUE,
+                             verbose = quanteda_options("verbose"))
+```
+#### Applied dictionaries to clean up profanity:
+```{r,warning=FALSE }
+tok_merged_file1 <- tokens_select(tok_merged_file, c(alvares, arr_bad,banned),
+                              selection="remove" )
+
+```
+#### number of deleted bad words in tokens:
+```{r,warning=FALSE}
+sum_bw<-sum(ntoken(tok_merged_file))-sum(ntoken(tok_merged_file1))
+sum_bw
+
+```
+#### The number of tokens in the corpus:
+```{r, warning=FALSE}
+sum_nt<-sum(ntoken(tok_merged_file1))
+sum_nt
+
+```
+#### To view the result, we will create a small selection:
+```{r,warning=FALSE }
+sample(tok_merged_file1, 1, FALSE)
+
+```
+#### Make dfm objekt. 
+We use the universal function dfm() of the package "quanteda"
+find out the 50 most frequent words:
+
+```{r, warning=FALSE}
+dfm_tok_merged_file<-dfm(tok_merged_file1)
+topfeatures(dfm_tok_merged_file, 50)
+
+```
+#### We have not deleted stop words, so we see them in our top 50.
+ I assume that stop words may be useful for creating a prediction model, 
+ but this is only the initial version.
+#### Plotting the 50 most frequent terms using ggplot2:
+```{r,warning=FALSE}
+textstat_frequency(dfm_tok_merged_file, n = 50) %>% 
+  ggplot(aes(x = reorder(feature, -rank), y = frequency)) +
+  geom_bar(stat = "identity") + coord_flip() + 
+  labs(x = "", y = "Term Frequency as a Percentage")
+
+```
+#### To visualize the data analysis of the text corpus, we will build a word cloud:
+```{r,warning=FALSE}
+set.seed(100)
+textplot_wordcloud(dfm_tok_merged_file, min_count = 6, max_words=300, random_order = FALSE, rotation = 0.25,
+                   color = RColorBrewer::brewer.pal(8, "Dark2"))
+```
+#### For further text analysis, we will create a set of n-grams.
+Let's create  a set of ipidgams -1 word, bigrams- 2 words, trigrams- 3 words:
+
+```{r,warning=FALSE}
+unigrams_freq <- textstat_frequency(dfm_tok_merged_file)  # unigram frequency
+unigrs <- subset(unigrams_freq,select=c(feature,frequency))
+names(unigrs) <- c("ngram","freq")
+head(unigrs)
+
+
+bigrams <- dfm(tokens_ngrams(tok_merged_file1, n = 2))
+bigrams_freq <- textstat_frequency(bigrams)                  # bigram frequency
+bigrs <- subset(bigrams_freq,select=c(feature,frequency))
+names(bigrs) <- c("ngram","freq")
+head(bigrs)
+
+trigrams <- dfm(tokens_ngrams(tok_merged_file1, n = 3))
+trigrams_freq <- textstat_frequency(trigrams)                  # trigram frequency
+trigrs <- subset(trigrams_freq,select=c(feature,frequency))
+names(trigrs) <- c("ngram","freq")
+head(trigrs)
+
+```
+
+#### Using the topfeatures() function, we visualize the number of the most get
+#### n-grams from the dfm. Let's build the top 50 most frequently used bigrams 
+#### and trigrams in our text. To build, we use ggplot2:
+
+```{r}
+library(ggplot2)
+textstat_frequency(trigrams, n = 50) %>% 
+  ggplot(aes(x = reorder(feature, -rank), y = frequency)) +
+  geom_bar(stat = "identity") + coord_flip() + 
+  labs(x = "", y = "Term Frequency as a Percentage")
+
+textstat_frequency(bigrams, n = 50) %>% 
+  ggplot(aes(x = reorder(feature, -rank), y = frequency)) +
+  geom_bar(stat = "identity") + coord_flip() + 
+  labs(x = "", y = "Term Frequency as a Percentage")
+
+```
+#### How many unique words  need in a frequency sorted dictionary to cover 50% of
+#### all word instances in the language? 90%?
+
+```{r}
+
+percentage <- cumsum(unigrams_freq$freq)/sum(unigrams_freq$freq)
+which(percentage >=.5)[1]
+
+which(percentage >=.9)[1]
+
+```
+####  140 unique words are enough to cover 50% of all occurrences of words, 
+#### and 7236 unique words are needed to cover 90%.
+
+#### How do you estimate how many words came from foreign languages?
+#### compare the text with one of the English dictionaries.
+
+#### Increase reach:
+#### try to increase the number of unique words using stemization.
+
+###  At the next stage, we proceed to building a forecasting model.
+
+
+
+
+
+
+
+
