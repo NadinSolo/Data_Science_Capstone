@@ -1,3 +1,4 @@
+#it's searching and thinking
 install.packages("quanteda")
 install.packages("quanteda.textmodels")
 install.packages("quanteda.textstats")
